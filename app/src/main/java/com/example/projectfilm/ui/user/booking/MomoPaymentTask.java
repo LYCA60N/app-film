@@ -5,35 +5,35 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.util.Log;
+import android.widget.Toast;
 
-import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FirebaseFirestore;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MomoPaymentTask extends AsyncTask<Void, Void, String> {
 
     private static final String TAG = "MomoPayment";
-
     private Context context;
-    private String amount;
+    private int userId;
+    private String amount ;
 
-    public MomoPaymentTask(Context context, String amount) {
+    public MomoPaymentTask(Context context, int userId, String amount) {
         this.context = context;
+        this.userId = userId;
         this.amount = amount;
+
     }
 
     @Override
@@ -41,20 +41,19 @@ public class MomoPaymentTask extends AsyncTask<Void, Void, String> {
         try {
             String accessKey = "F8BBA842ECF85";
             String secretKey = "K951B6PE1waDMi640xX08PD3vg6EkVlz";
-            String orderInfo = "pay with MoMo";
+            String orderInfo = "Thanh toán vé xem phim";
             String partnerCode = "MOMO";
-            String redirectUrl = "https://webhook.site/b3088a6a-2d17-4f8d-a383-71389a6c600b";
-            String ipnUrl = "https://webhook.site/b3088a6a-2d17-4f8d-a383-71389a6c600b";
-            String requestType = "payWithMethod";
+            String redirectUrl = "myapp://momoresult"; // Scheme custom
+            String ipnUrl = "https://momo.vn";
+            String requestType = "captureWallet";
             String orderId = partnerCode + System.currentTimeMillis();
             String requestId = orderId;
             String extraData = "";
-            String orderGroupId = "";
             boolean autoCapture = true;
             String lang = "vi";
 
             String rawSignature = "accessKey=" + accessKey +
-                    "&amount=" + this.amount +
+                    "&amount=" +  this.amount +
                     "&extraData=" + extraData +
                     "&ipnUrl=" + ipnUrl +
                     "&orderId=" + orderId +
@@ -68,10 +67,10 @@ public class MomoPaymentTask extends AsyncTask<Void, Void, String> {
 
             String jsonBody = "{"
                     + "\"partnerCode\":\"" + partnerCode + "\","
-                    + "\"partnerName\":\"Test\","
-                    + "\"storeId\":\"MomoTestStore\","
+                    + "\"partnerName\":\"MoMoTest\","
+                    + "\"storeId\":\"TestStore\","
                     + "\"requestId\":\"" + requestId + "\","
-                    + "\"amount\":\"" + this.amount + "\","
+                    + "\"amount\":\"" +  this.amount + "\","
                     + "\"orderId\":\"" + orderId + "\","
                     + "\"orderInfo\":\"" + orderInfo + "\","
                     + "\"redirectUrl\":\"" + redirectUrl + "\","
@@ -80,7 +79,6 @@ public class MomoPaymentTask extends AsyncTask<Void, Void, String> {
                     + "\"requestType\":\"" + requestType + "\","
                     + "\"autoCapture\":" + autoCapture + ","
                     + "\"extraData\":\"" + extraData + "\","
-                    + "\"orderGroupId\":\"" + orderGroupId + "\","
                     + "\"signature\":\"" + signature + "\""
                     + "}";
 
@@ -96,22 +94,16 @@ public class MomoPaymentTask extends AsyncTask<Void, Void, String> {
             }
 
             int status = conn.getResponseCode();
-            Log.d(TAG, "Status: " + status);
-
             InputStream is = (status < HttpURLConnection.HTTP_BAD_REQUEST) ? conn.getInputStream() : conn.getErrorStream();
-            BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
             StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = br.readLine()) != null) {
-                response.append(line.trim());
+            int b;
+            while ((b = is.read()) != -1) {
+                response.append((char) b);
             }
-            br.close();
+            is.close();
             conn.disconnect();
 
-            Log.d(TAG, "Body: " + response.toString());
-
             return response.toString();
-
         } catch (Exception e) {
             Log.e(TAG, "Error", e);
             return null;
@@ -122,7 +114,6 @@ public class MomoPaymentTask extends AsyncTask<Void, Void, String> {
         Mac hmacSha256 = Mac.getInstance("HmacSHA256");
         SecretKeySpec secret_key = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
         hmacSha256.init(secret_key);
-
         byte[] hash = hmacSha256.doFinal(data.getBytes(StandardCharsets.UTF_8));
         StringBuilder sb = new StringBuilder();
         for (byte b : hash) {
@@ -134,12 +125,7 @@ public class MomoPaymentTask extends AsyncTask<Void, Void, String> {
     @Override
     protected void onPostExecute(String result) {
         super.onPostExecute(result);
-        Log.d(TAG, "onPostExecute: " + result);
-
-        if (result == null) {
-            Log.e(TAG, "Kết quả null");
-            return;
-        }
+        if (result == null) return;
 
         try {
             JSONObject json = new JSONObject(result);
@@ -147,39 +133,33 @@ public class MomoPaymentTask extends AsyncTask<Void, Void, String> {
 
             if (resultCode == 0) {
                 String payUrl = json.getString("payUrl");
-                String orderId = json.getString("orderId");
-                String amount = json.getString("amount");
 
-                // Mở giao diện MoMo
-                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(payUrl));
-                context.startActivity(browserIntent);
-
-                // Ghi booking Firestore (nếu muốn lưu trước khi thanh toán xong)
-                FirebaseAuth auth = FirebaseAuth.getInstance();
-                String userId = auth.getCurrentUser() != null ? auth.getCurrentUser().getUid() : "unknown";
-
+                // 👉 Lưu Firestore trạng thái pending
                 FirebaseFirestore db = FirebaseFirestore.getInstance();
-                Map<String, Object> bookingData = new HashMap<>();
-                bookingData.put("orderId", orderId);
-                bookingData.put("amount", amount);
-                bookingData.put("status", "pending");
-                bookingData.put("createdAt", System.currentTimeMillis());
-                bookingData.put("userId", userId);
+                Map<String, Object> paymentData = new HashMap<>();
+                paymentData.put("userId", userId);
+                paymentData.put("status", "pending");
+                paymentData.put("payUrl", payUrl);
+                paymentData.put("price",  this.amount);
+                paymentData.put("orderId", json.getString("orderId"));
+                paymentData.put("createdAt", System.currentTimeMillis());
 
                 db.collection("bookings")
-                        .add(bookingData)
-                        .addOnSuccessListener(documentReference -> {
-                            Log.d(TAG, "Booking đã lưu Firestore, ID: " + documentReference.getId());
-                        })
-                        .addOnFailureListener(e -> {
-                            Log.e(TAG, "Lỗi khi lưu booking", e);
-                        });
+                        .add(paymentData)
+                        .addOnSuccessListener(documentReference -> Log.d(TAG, "Đã lưu trạng thái pending"))
+                        .addOnFailureListener(e -> Log.e(TAG, "Lỗi lưu Firestore", e));
+
+                // 👉 Mở URL thanh toán (trình duyệt hoặc MoMo app)
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setData(Uri.parse(payUrl));
+                context.startActivity(intent);
 
             } else {
                 Log.e(TAG, "Thanh toán thất bại: " + json.getString("message"));
+                Toast.makeText(context, "Khởi tạo thanh toán thất bại!", Toast.LENGTH_SHORT).show();
             }
         } catch (Exception e) {
-            Log.e(TAG, "Lỗi parse JSON", e);
+            Log.e(TAG, "Parse error", e);
         }
     }
 }

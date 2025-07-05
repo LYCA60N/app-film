@@ -4,6 +4,7 @@ import com.example.projectfilm.R;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
@@ -33,6 +34,8 @@ public class ThanhToanActivity extends AppCompatActivity {
 
     private String cinema, time, seats, price;
 
+    private boolean isCheckingPayment = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -54,7 +57,7 @@ public class ThanhToanActivity extends AppCompatActivity {
         currentUser = FirebaseAuth.getInstance().getCurrentUser();
         firestore = FirebaseFirestore.getInstance();
 
-        // Nhận dữ liệu từ SeatListActivity
+        // Nhận dữ liệu
         Intent intent = getIntent();
         cinema = intent.getStringExtra("cinema");
         time = intent.getStringExtra("time");
@@ -117,21 +120,22 @@ public class ThanhToanActivity extends AppCompatActivity {
                 return;
             }
 
+            isCheckingPayment = true;
+
             String paymentMethod = (checkedId == R.id.radioMomo) ? "Ví MoMo" : "Ngân hàng";
             String name = editName.getText().toString().trim();
             String email = editEmail.getText().toString().trim();
 
             if (paymentMethod.equals("Ví MoMo")) {
-                // Gọi task MoMo
-                @SuppressLint("StaticFieldLeak") MomoPaymentTask momoTask = new MomoPaymentTask(this, price);
+                @SuppressLint("StaticFieldLeak")
+                int userIdInt = currentUser.getUid().hashCode();
+                MomoPaymentTask momoTask = new MomoPaymentTask(this, userIdInt, price);
                 momoTask.execute();
             } else {
-                // Thanh toán ngân hàng -> đi tiếp luôn
                 Intent confirmIntent = new Intent(ThanhToanActivity.this, ThanhToanThanhCongActivity.class);
                 confirmIntent.putExtra("cinema", cinema);
                 confirmIntent.putExtra("time", time);
                 confirmIntent.putExtra("seats", seats);
-                confirmIntent.putExtra("price", price);
                 confirmIntent.putExtra("name", name);
                 confirmIntent.putExtra("email", email);
                 confirmIntent.putExtra("paymentMethod", paymentMethod);
@@ -139,5 +143,82 @@ public class ThanhToanActivity extends AppCompatActivity {
                 finish();
             }
         });
+
+        // Xử lý callback MoMo nếu app mở lại
+        handleMomoResult(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        handleMomoResult(intent);
+    }
+
+    private void handleMomoResult(Intent intent) {
+        Uri data = intent.getData();
+        if (data != null && "myapp".equals(data.getScheme())) {
+            String resultCode = data.getQueryParameter("resultCode");
+            String message = data.getQueryParameter("message");
+            String orderId = data.getQueryParameter("orderId");
+
+            Log.d("MOMO_RESULT", "resultCode: " + resultCode + ", message: " + message);
+
+            if ("0".equals(resultCode)) {
+                updateFirestoreSuccess(orderId, data.toString());
+            } else {
+                Toast.makeText(this, "Thanh toán thất bại hoặc bị hủy", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void updateFirestoreSuccess(String orderId, String callbackUrl) {
+        firestore.collection("bookings")
+                .whereEqualTo("userId", currentUser.getUid())
+                .whereEqualTo("status", "pending")
+                .get()
+                .addOnSuccessListener(querySnapshots -> {
+                    if (!querySnapshots.isEmpty()) {
+                        querySnapshots.getDocuments().get(0).getReference()
+                                .update("status", "success", "callbackUrl", callbackUrl, "orderId", orderId, "updatedAt", System.currentTimeMillis())
+                                .addOnSuccessListener(aVoid -> {
+                                    Toast.makeText(this, "Thanh toán thành công!", Toast.LENGTH_SHORT).show();
+                                    startActivity(new Intent(ThanhToanActivity.this, ThanhToanThanhCongActivity.class));
+                                    finish();
+                                })
+                                .addOnFailureListener(e -> {
+                                    Log.e("PAYMENT", "Lỗi update Firestore", e);
+                                    Toast.makeText(this, "Lỗi update Firestore", Toast.LENGTH_SHORT).show();
+                                });
+                    } else {
+                        Toast.makeText(this, "Không tìm thấy giao dịch pending", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    Log.e("PAYMENT", "Lỗi truy vấn Firestore", e);
+                    Toast.makeText(this, "Lỗi truy vấn Firestore", Toast.LENGTH_SHORT).show();
+                });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        if (!isCheckingPayment) {
+            return;
+        }
+
+        firestore.collection("bookings")
+                .whereEqualTo("userId", currentUser != null ? currentUser.getUid() : "")
+                .whereEqualTo("status", "success")
+                .get()
+                .addOnSuccessListener(querySnapshots -> {
+                    if (!querySnapshots.isEmpty()) {
+                        startActivity(new Intent(ThanhToanActivity.this, ThanhToanThanhCongActivity.class));
+                        finish();
+                    }
+                })
+                .addOnFailureListener(e -> {
+                    Log.e("PAYMENT", "Lỗi khi kiểm tra Firestore", e);
+                });
     }
 }

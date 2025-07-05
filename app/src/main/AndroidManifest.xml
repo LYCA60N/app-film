@@ -55,8 +55,19 @@
             android:theme="@style/Theme.ProjectFilm.NoActionBar" />
         <activity android:name=".ui.user.booking.Ticketbooking"
             android:theme="@style/Theme.ProjectFilm.NoActionBar" />
+
+        <!-- ✅ Đưa intent-filter vào activity ThanhToanActivity -->
         <activity android:name=".ui.user.booking.ThanhToanActivity"
-            android:theme="@style/Theme.ProjectFilm.NoActionBar" />
+            android:theme="@style/Theme.ProjectFilm.NoActionBar"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="myapp" android:host="momoresult" />
+            </intent-filter>
+        </activity>
+
         <activity android:name=".ui.user.booking.ThanhToanThanhCongActivity"
             android:theme="@style/Theme.ProjectFilm.NoActionBar" />
         <activity android:name=".ui.user.booking.BookingHistoryActivity"

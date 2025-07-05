@@ -5,10 +5,12 @@ pluginManagement {
                 includeGroupByRegex("com\\.android.*")
                 includeGroupByRegex("com\\.google.*")
                 includeGroupByRegex("androidx.*")
+
             }
         }
         mavenCentral()
         gradlePluginPortal()
+        maven ("https://jitpack.io")
     }
 }
 dependencyResolutionManagement {

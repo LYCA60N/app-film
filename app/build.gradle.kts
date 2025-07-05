@@ -68,6 +68,8 @@ dependencies {
 
     implementation ("com.github.bumptech.glide:glide:4.15.1")
     annotationProcessor ("com.github.bumptech.glide:compiler:4.15.1")
+    //momo
+//    implementation ("com.github.momo-wallet:mobile-sdk:1.0.7")
 
     val nav_version = "2.7.7"
     implementation ("androidx.navigation:navigation-fragment:$nav_version")
@@ -75,4 +77,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")}
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+
+
+}
